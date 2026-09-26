@@ -1,0 +1,31 @@
+.admin-create-product {
+  border-top: 1px solid var(--line);
+  margin-top: 48px;
+  padding-top: 28px;
+}
+.new-product-form {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr 0.7fr 0.7fr 1fr;
+  gap: 8px;
+}
+.new-product-form textarea {
+  min-height: 38px;
+  resize: vertical;
+}
+.new-product-form button {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+.new-product-form .form-error {
+  grid-column: 1 / -1;
+}
+@media (max-width: 760px) {
+  .new-product-form {
+    grid-template-columns: 1fr 1fr;
+  }
+  .new-product-form textarea,
+  .new-product-form button,
+  .new-product-form .form-error {
+    grid-column: 1 / -1;
+  }
+}

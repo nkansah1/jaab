@@ -1,0 +1,83 @@
+.admin-product-input {
+  border: 1px solid var(--line);
+  background: var(--white);
+  padding: 8px;
+  font-size: 11px;
+  color: var(--ink);
+  min-width: 0;
+}
+.product-edit-form {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr 0.7fr 0.7fr 1fr;
+  gap: 8px;
+  flex: 1;
+}
+.product-edit-form textarea {
+  min-height: 34px;
+  resize: vertical;
+}
+.product-edit-form .add-button {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+.product-image-input {
+  max-width: 170px;
+}
+.product-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.wordmark img {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center;
+  margin-right: 9px;
+  vertical-align: middle;
+}
+.footer .wordmark img {
+  width: 34px;
+  height: 34px;
+}
+.hero-logo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  z-index: 2;
+}
+.inventory-row {
+  align-items: flex-start !important;
+  gap: 24px;
+}
+@media (max-width: 760px) {
+  .inventory-row {
+    display: block;
+  }
+  .inventory-info {
+    margin-bottom: 12px;
+  }
+  .product-edit-form {
+    grid-template-columns: 1fr 1fr;
+  }
+  .product-edit-form textarea,
+  .product-edit-form .add-button {
+    grid-column: 1 / -1;
+  }
+  .product-edit-form .add-button {
+    justify-self: start;
+  }
+  .product-image-input {
+    max-width: 100%;
+  }
+  .hero-logo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}

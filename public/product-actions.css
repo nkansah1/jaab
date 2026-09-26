@@ -1,0 +1,35 @@
+.product-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+.product-actions .add-button,
+.whatsapp-button {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 11px 12px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+.whatsapp-button {
+  border: 1px solid var(--olive);
+  color: var(--olive);
+  background: transparent;
+}
+.whatsapp-button:hover {
+  background: var(--olive);
+  color: var(--white);
+}
+@media (max-width: 760px) {
+  .product-actions .add-button,
+  .whatsapp-button {
+    min-height: 38px;
+    font-size: 9px;
+  }
+}

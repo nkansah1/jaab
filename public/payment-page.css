@@ -1,0 +1,42 @@
+.payment-step.payment-page {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  overflow: auto;
+  background: var(--paper);
+  padding: clamp(24px, 5vw, 64px) 20px !important;
+}
+.payment-step.payment-page:before {
+  content: "JAABCOLLECTIONS";
+  display: block;
+  width: min(560px, 100%);
+  margin: 0 auto 22px;
+  color: var(--clay);
+  font: 700 13px var(--sans);
+  letter-spacing: 0.08em;
+}
+.payment-step.payment-page > * {
+  width: min(560px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+  background: var(--white);
+}
+body.payment-page-open {
+  overflow: hidden;
+}
+@media (max-width: 600px) {
+  .payment-step.payment-page {
+    padding: 20px 0 !important;
+  }
+  .payment-step.payment-page:before {
+    padding: 0 22px;
+    margin-bottom: 16px;
+  }
+  .payment-step.payment-page > * {
+    width: 100%;
+  }
+}

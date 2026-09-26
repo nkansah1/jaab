@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Jaab Collection — considered objects for everyday living."
+    />
+    <title>Jaab Collection | Everyday, considered</title>
+    <link rel="icon" type="image/jpeg" href="/logo.jpg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;1,600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/admin.css" />
+    <link rel="stylesheet" href="/auth.css" />
+    <link rel="stylesheet" href="/users.css" />
+    <link rel="stylesheet" href="/zoom.css" />
+    <link rel="stylesheet" href="/catalog.css" />
+    <link rel="stylesheet" href="/product-actions.css" />
+    <link rel="stylesheet" href="/payment.css" />
+    <link rel="stylesheet" href="/payment-page.css" />
+  </head>
+  <body>
+    <div class="announcement">
+      Complimentary delivery in Accra on orders over GH₵500 <span>•</span> Pay
+      securely with your preferred method
+    </div>
+    <header class="site-header">
+      <a class="wordmark" href="#shop" aria-label="Jaab Collection home"
+        ><img src="/logo.jpg" alt="Jaab Collection logo" /><span
+          >JAABCOLLECTIONS</span
+        ></a
+      >
+      <nav class="main-nav" aria-label="Primary navigation">
+        <a href="#shop">Shop</a><a href="#story">Our story</a>
+      </nav>
+      <div class="header-actions">
+        <button
+          class="header-orders"
+          id="header-orders-button"
+          aria-label="Open order history"
+        >
+          <span>Orders</span><b id="header-orders-count">0</b></button
+        ><button
+          class="auth-link"
+          id="account-button"
+          aria-label="Open sign in"
+        >
+          Sign in</button
+        ><button
+          class="auth-link"
+          id="register-button"
+          aria-label="Open registration"
+        >
+          Register</button
+        ><button
+          class="auth-link"
+          id="logout-button"
+          aria-label="Sign out"
+          hidden
+        >
+          Sign out</button
+        ><button
+          class="cart-button"
+          id="cart-button"
+          aria-label="Open shopping bag"
+        >
+          Bag <b id="cart-count">0</b>
+        </button>
+      </div>
+    </header>
+    <span id="orders" hidden aria-hidden="true"></span>
+    <main>
+      <section class="hero" id="story">
+        <div class="hero-copy">
+          <p class="eyebrow">Accra · Ghana</p>
+          <h1>Made for the<br /><em>everyday.</em></h1>
+          <p class="hero-text">
+            A quiet collection of objects, textures and small luxuries made to
+            move with you.
+          </p>
+          <a href="#shop" class="text-link"
+            >Explore the collection <span>↘</span></a
+          >
+        </div>
+        <div class="hero-art">
+          <img class="hero-logo" src="/logo.jpg" alt="Jaab Collection logo" />
+        </div>
+      </section>
+      <section class="shop-section" id="shop">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">The collection</p>
+            <h2>Find your next<br /><em>favourite thing.</em></h2>
+          </div>
+          <p class="section-note">
+            Small-batch pieces, thoughtfully<br />selected and ready to ship.
+          </p>
+        </div>
+        <div class="shop-controls">
+          <div class="categories" id="categories"></div>
+          <label class="search-field"
+            ><span>⌕</span
+            ><input
+              id="search-input"
+              type="search"
+              placeholder="Search the collection"
+              aria-label="Search products"
+          /></label>
+        </div>
+        <div class="product-grid" id="product-grid"></div>
+      </section>
+      <section class="story-band">
+        <p class="eyebrow">Why Jaab</p>
+        <div class="story-grid">
+          <h2>Good things should<br /><em>feel like you.</em></h2>
+          <p>
+            We work with makers and materials that reward a closer look. Every
+            Jaab piece is chosen to be useful, personal and around for a long
+            time.
+          </p>
+          <a href="#story" class="text-link">Read our story <span>↘</span></a>
+        </div>
+      </section>
+      <section class="admin-section" id="admin">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Operations desk</p>
+            <h2>Keep things<br /><em>moving.</em></h2>
+          </div>
+          <p class="section-note">
+            Incoming orders and live<br />inventory, in one place.
+          </p>
+        </div>
+        <div id="admin-content" class="admin-content"></div>
+      </section>
+    </main>
+    <footer>
+      <a class="wordmark" href="#shop"
+        ><img src="/logo.jpg" alt="Jaab Collection logo" /><span
+          >JAABCOLLECTIONS</span
+        ></a
+      >
+      <p>Objects with a point of view.<br />Accra · Ghana</p>
+      <p class="footer-contact">
+        <a href="tel:+233558688201">+233 55 868 8201</a><br /><a
+          href="https://instagram.com/jaab1collections"
+          target="_blank"
+          rel="noreferrer"
+          >@jaab1collections</a
+        ><br /><a href="mailto:jaab1collections@gmail.com"
+          >jaab1collections@gmail.com</a
+        >
+      </p>
+      <p class="footer-meta">© 2026 Jaab Collection</p>
+    </footer>
+    <aside class="cart-drawer" id="cart-drawer" aria-hidden="true">
+      <div class="drawer-header">
+        <div>
+          <p class="eyebrow">Your cart</p>
+          <h2>Worth keeping.</h2>
+        </div>
+        <button class="close-button" id="close-cart" aria-label="Close cart">
+          ×
+        </button>
+      </div>
+      <div id="cart-items" class="cart-items"></div>
+      <div class="cart-footer">
+        <div><span>Subtotal</span><strong id="cart-total">GH₵0</strong></div>
+        <button class="primary-button" id="checkout-button">
+          Continue to checkout <span>→</span>
+        </button>
+      </div>
+    </aside>
+    <div class="scrim" id="scrim"></div>
+    <dialog id="order-history-dialog">
+      <button
+        class="close-button"
+        id="close-order-history"
+        aria-label="Close order history"
+      >
+        ×
+      </button>
+      <p class="eyebrow">Your account</p>
+      <h2>Order <em>history.</em></h2>
+      <div id="header-orders-content" class="header-orders-content"></div>
+    </dialog>
+    <dialog id="auth-dialog">
+      <button class="close-button" id="close-auth" aria-label="Close sign in">
+        ×
+      </button>
+      <p class="eyebrow">Welcome back</p>
+      <h2 id="auth-title">Sign in to Jaab.</h2>
+      <p class="dialog-intro">
+        Save your details and keep track of every delivery.
+      </p>
+      <form id="auth-form">
+        <input
+          id="auth-name"
+          placeholder="Your name"
+          autocomplete="name"
+        /><input
+          id="auth-email"
+          type="email"
+          placeholder="Email address"
+          required
+          autocomplete="email"
+        /><input
+          id="auth-password"
+          type="password"
+          placeholder="Password (8+ characters)"
+          required
+          autocomplete="current-password"
+        />
+        <p class="form-error" id="auth-error"></p>
+        <button class="primary-button" type="submit" id="auth-submit">
+          Sign in <span>→</span>
+        </button>
+      </form>
+      <button class="switch-auth" id="switch-auth">
+        New here? Create an account
+      </button>
+    </dialog>
+    <dialog id="checkout-dialog">
+      <button
+        class="close-button"
+        id="close-checkout"
+        aria-label="Close checkout"
+      >
+        ×
+      </button>
+      <p class="eyebrow">Secure checkout</p>
+      <h2>Almost <em>yours.</em></h2>
+      <form id="checkout-form">
+        <label
+          >Delivery address<textarea
+            id="checkout-address"
+            required
+            placeholder="Street address"
+          ></textarea>
+        </label>
+        <div class="checkout-grid">
+          <label
+            >City<input
+              id="checkout-city"
+              required
+              placeholder="Accra"
+              type="text" /></label
+          ><label
+            >State/Region<input
+              id="checkout-state"
+              required
+              placeholder="Greater Accra"
+              type="text"
+          /></label>
+        </div>
+        <div class="checkout-grid">
+          <label
+            >ZIP code<input
+              id="checkout-zip"
+              required
+              placeholder="00233"
+              type="text" /></label
+          ><label
+            >Phone number<input
+              id="checkout-phone"
+              required
+              placeholder="+233 20 000 0000"
+              type="tel"
+          /></label>
+        </div>
+        <fieldset>
+          <legend>Payment method</legend>
+          <label class="radio-option"
+            ><input type="radio" name="payment" value="Mobile Money" checked />
+            Mobile Money (MoMo) <span>GH₵</span></label
+          ><label class="radio-option"
+            ><input type="radio" name="payment" value="Pay on delivery" /> Pay
+            on delivery <span>GH₵</span></label
+          >
+        </fieldset>
+        <p class="form-error" id="checkout-error"></p>
+        <button class="primary-button" type="submit" id="place-order-button">
+          Place order <span>→</span>
+        </button>
+      </form>
+      <div id="payment-step" class="payment-step" hidden>
+        <div class="payment-step-header">
+          <div>
+            <p class="eyebrow">One final step</p>
+            <h3>Complete your payment</h3>
+          </div>
+          <button
+            class="close-button"
+            type="button"
+            data-back-to-checkout
+            aria-label="Back to checkout"
+          >
+            ×
+          </button>
+        </div>
+        <div class="payment-reference-card">
+          <span>Order reference</span
+          ><strong id="payment-reference">ORD-XXXX</strong
+          ><span>Total to pay</span><strong id="payment-total">GH₵0</strong>
+        </div>
+        <div class="payment-instruction-box">
+          <div class="payment-icon">☎</div>
+          <h2>Pay with MTN Mobile Money</h2>
+          <p>Use your phone to complete this secure payment:</p>
+          <ol>
+            <li>Dial <strong>*170#</strong></li>
+            <li>Select <strong>1 · Transfer Money</strong></li>
+            <li>Select <strong>1 · MoMo User</strong></li>
+            <li>Enter merchant number <strong>0558688201</strong></li>
+            <li>Enter amount <strong id="payment-amount">GH₵0</strong></li>
+            <li>
+              Enter reference
+              <strong id="payment-reference-inline">ORD-XXXX</strong>
+            </li>
+            <li>Enter your PIN to confirm</li>
+          </ol>
+        </div>
+        <div class="payment-summary">
+          <h3>Your order</h3>
+          <div id="payment-items" class="payment-items"></div>
+          <div class="payment-summary-total">
+            <span>Total</span><strong id="payment-summary-total">GH₵0</strong>
+          </div>
+        </div>
+        <label class="confirm-checkbox"
+          ><input type="checkbox" id="momo-payment-confirmed" /> I have
+          completed the MTN MoMo payment</label
+        >
+        <div class="payment-actions">
+          <button class="secondary-button" type="button" data-back-to-checkout>
+            Back</button
+          ><button
+            class="primary-button"
+            type="button"
+            id="confirm-order-button"
+            disabled
+          >
+            Confirm Order <span>→</span>
+          </button>
+        </div>
+      </div>
+    </dialog>
+    <dialog id="zoom-dialog">
+      <button
+        class="close-button"
+        id="close-zoom"
+        aria-label="Close product image"
+      >
+        ×
+      </button>
+      <div class="zoom-frame" id="zoom-frame"></div>
+      <div class="zoom-controls" aria-label="Product zoom controls">
+        <button id="zoom-out" aria-label="Zoom out">−</button
+        ><span id="zoom-level">100%</span
+        ><button id="zoom-in" aria-label="Zoom in">+</button>
+      </div>
+      <p class="zoom-title" id="zoom-title"></p>
+    </dialog>
+    <div class="toast" id="toast" role="status"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>
