@@ -75,7 +75,10 @@ declare
   v_order public.orders%rowtype;
   v_created_at timestamptz := now();
 begin
-  if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+  if coalesce(jsonb_typeof(p_items), '') <> 'array' then
+    raise exception 'Order items must be a JSON array.' using errcode = '22023';
+  end if;
+  if jsonb_array_length(p_items) = 0 then
     raise exception 'The order must contain at least one item.' using errcode = '22023';
   end if;
   if p_payment not in ('Mobile Money', 'Pay on delivery') then
@@ -241,3 +244,5 @@ using (
 revoke all on public.profiles from anon;
 revoke all on public.orders from anon;
 revoke all on public.order_items from anon;
+
+notify pgrst, 'reload schema';

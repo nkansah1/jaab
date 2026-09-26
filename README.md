@@ -21,7 +21,7 @@ The repository includes a Render Blueprint in `render.yaml`.
 5. In Render **Settings → Custom Domains**, add your domain. Follow the DNS records Render displays at your domain registrar, then wait for domain verification and TLS/HTTPS to become active.
 6. In Supabase **Authentication → URL Configuration**, set the production domain as the Site URL and add the production domain to the Redirect URLs list.
 
-The Blueprint uses Render's free web-service plan, which can spin down when idle and is intended for initial setup/testing. Upgrade the plan for production availability. Do not accept real customer orders yet: products are in Supabase, but orders and server sessions are still stored in memory and will be lost on a server restart or redeploy. Move those to durable Supabase storage before live sales.
+The Blueprint uses Render's free web-service plan, which can spin down when idle and is intended for initial setup/testing. Upgrade the plan for production availability. Orders become durable after you run the latest `supabase/schema.sql`; until that migration is applied, checkout reports a setup error rather than storing orders in volatile memory. App login sessions are still in memory and customers may need to sign in again after a server restart or redeploy.
 
 ## Supabase connection
 

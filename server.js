@@ -137,6 +137,30 @@ async function fetchSupabaseOrders(userId) {
   const response = await fetch(`${supabaseUrl}/rest/v1/orders?${query}`, { headers: supabaseHeaders() });
   return (await supabaseResponse(response)).map(mapSupabaseOrder);
 }
+async function supabaseOrdersFunctionReady() {
+  if (!supabaseWriteConfigured()) return false;
+  try {
+    const response = await fetch(`${supabaseUrl}/rest/v1/rpc/create_order`, {
+      method: 'POST',
+      headers: supabaseHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        p_order_id: 'JAAB-HEALTH-CHECK',
+        p_user_id: '00000000-0000-0000-0000-000000000000',
+        p_customer: '',
+        p_phone: '',
+        p_email: '',
+        p_payment: 'Mobile Money',
+        p_address: '',
+        p_delivery_address: {},
+        p_items: []
+      })
+    });
+    const result = await response.json().catch(() => ({}));
+    return response.status === 400 && /at least one item/i.test(result.message || '');
+  } catch {
+    return false;
+  }
+}
 async function fetchSupabaseProfile(userId) {
   if (!supabaseWriteConfigured()) throw new Error('Supabase profile access is not configured on the server.');
   const query = new URLSearchParams({ select: 'id,name,email,role,created_at', id: `eq.${userId}`, limit: '1' });
@@ -166,7 +190,8 @@ async function api(req, res, url) {
     if (!supabaseUrl || !supabaseAnonKey) return json(res, 503, { connected: false, error: 'Supabase environment variables are missing.' });
     try {
       const response = await fetch(`${supabaseUrl}/auth/v1/settings`, { headers: { apikey: supabaseAnonKey } });
-      return json(res, response.ok ? 200 : 502, { connected: response.ok, productUploadsConfigured: supabaseWriteConfigured(), storageBucket: supabaseStorageBucket, project: new URL(supabaseUrl).hostname, service: 'Supabase Auth and product catalog' });
+      const ordersPersistenceConfigured = await supabaseOrdersFunctionReady();
+      return json(res, response.ok ? 200 : 502, { connected: response.ok, productUploadsConfigured: supabaseWriteConfigured(), ordersPersistenceConfigured, storageBucket: supabaseStorageBucket, project: new URL(supabaseUrl).hostname, service: 'Supabase Auth, product catalog, and orders' });
     } catch (error) {
       return json(res, 502, { connected: false, error: error.message });
     }
