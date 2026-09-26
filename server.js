@@ -114,6 +114,29 @@ async function fetchSupabaseProducts() {
   const records = await supabaseResponse(response);
   return records.map(product => ({ ...product, createdAt: product.created_at, updatedAt: product.updated_at }));
 }
+function mapSupabaseOrder(order) {
+  return {
+    id: order.id,
+    reference: order.reference,
+    userId: order.user_id,
+    customer: order.customer,
+    phone: order.phone,
+    email: order.email,
+    items: (order.items || []).map(item => ({ productId: item.productId || item.product_id, name: item.name, quantity: item.quantity, price: item.price })),
+    total: order.total,
+    status: order.status,
+    payment: order.payment,
+    address: order.address,
+    deliveryAddress: order.deliveryAddress || order.delivery_address,
+    createdAt: order.createdAt || order.created_at
+  };
+}
+async function fetchSupabaseOrders(userId) {
+  const query = new URLSearchParams({ select: '*,items:order_items(productId:product_id,name,quantity,price)', order: 'created_at.desc' });
+  if (userId) query.set('user_id', `eq.${userId}`);
+  const response = await fetch(`${supabaseUrl}/rest/v1/orders?${query}`, { headers: supabaseHeaders() });
+  return (await supabaseResponse(response)).map(mapSupabaseOrder);
+}
 async function fetchSupabaseProfile(userId) {
   if (!supabaseWriteConfigured()) throw new Error('Supabase profile access is not configured on the server.');
   const query = new URLSearchParams({ select: 'id,name,email,role,created_at', id: `eq.${userId}`, limit: '1' });
@@ -203,6 +226,13 @@ async function api(req, res, url) {
   }
   if (req.method === 'GET' && route === '/api/orders') {
     const user = requireUser(req, res); if (!user) return;
+    if (supabaseWriteConfigured() && user.supabaseUserId) {
+      try {
+        return json(res, 200, { orders: await fetchSupabaseOrders(user.supabaseUserId) });
+      } catch (error) {
+        return json(res, 502, { error: `Could not load your Supabase orders: ${error.message}` });
+      }
+    }
     return json(res, 200, { orders: orders.filter(order => order.userId === user.id) });
   }
   if (req.method === 'POST' && route === '/api/orders') {
@@ -214,7 +244,36 @@ async function api(req, res, url) {
       state: data.state || '',
       zipCode: data.zipCode || ''
     };
-    if (!data.items?.length || !deliveryAddress.address || !deliveryAddress.city || !deliveryAddress.state || !deliveryAddress.zipCode || !data.phone || !data.payment) return json(res, 400, { error: 'Cart, delivery address, city, state/region, ZIP code, phone number and payment method are required.' });
+    if (!Array.isArray(data.items) || !data.items.length || data.items.some(item => !item.productId || !Number.isInteger(item.quantity) || item.quantity < 1) || !deliveryAddress.address || !deliveryAddress.city || !deliveryAddress.state || !deliveryAddress.zipCode || !data.phone || !['Mobile Money', 'Pay on delivery'].includes(data.payment)) return json(res, 400, { error: 'Cart items, delivery address, city, state/region, ZIP code, phone number and a valid payment method are required.' });
+    if (supabaseWriteConfigured() && user.supabaseUserId) {
+      const orderReference = `JAAB-${Date.now().toString(36).slice(-6).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+      const address = [deliveryAddress.address, deliveryAddress.city, deliveryAddress.state, deliveryAddress.zipCode].join(', ');
+      try {
+        const response = await fetch(`${supabaseUrl}/rest/v1/rpc/create_order`, {
+          method: 'POST',
+          headers: supabaseHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            p_order_id: orderReference,
+            p_user_id: user.supabaseUserId,
+            p_customer: user.name,
+            p_phone: data.phone,
+            p_email: user.email,
+            p_payment: data.payment,
+            p_address: address,
+            p_delivery_address: deliveryAddress,
+            p_items: data.items.map(item => ({ productId: item.productId, quantity: item.quantity }))
+          })
+        });
+        const order = await supabaseResponse(response);
+        return json(res, 201, { order: mapSupabaseOrder(order) });
+      } catch (error) {
+        if (/Could not find the function public\.create_order|schema cache/i.test(error.message)) {
+          return json(res, 503, { error: 'Supabase order storage is not installed yet. Run the latest supabase/schema.sql in your Supabase SQL Editor, then retry checkout.' });
+        }
+        const status = /no longer available|not available in that quantity/i.test(error.message) ? 409 : 502;
+        return json(res, status, { error: `Supabase could not create the order: ${error.message}` });
+      }
+    }
     const lineItems = [];
     for (const item of data.items) {
       const product = products.find(entry => entry.id === item.productId);
@@ -253,6 +312,13 @@ async function api(req, res, url) {
   }
   if (route === '/api/admin/orders' && req.method === 'GET') {
     const user = requireUser(req, res); if (!user || user.role !== 'admin') return user ? json(res, 403, { error: 'Admin access required.' }) : undefined;
+    if (supabaseWriteConfigured()) {
+      try {
+        return json(res, 200, { orders: await fetchSupabaseOrders() });
+      } catch (error) {
+        return json(res, 502, { error: `Could not load Supabase orders: ${error.message}` });
+      }
+    }
     return json(res, 200, { orders });
   }
   if (route === '/api/admin/users' && req.method === 'GET') {
@@ -268,6 +334,25 @@ async function api(req, res, url) {
   }
   if (route.startsWith('/api/admin/orders/') && req.method === 'PATCH') {
     const user = requireUser(req, res); if (!user || user.role !== 'admin') return user ? json(res, 403, { error: 'Admin access required.' }) : undefined;
+    if (supabaseWriteConfigured()) {
+      const data = await body(req);
+      if (!['Order received', 'Processing', 'Out for delivery', 'Delivered', 'Cancelled'].includes(data.status)) return json(res, 400, { error: 'Unsupported order status.' });
+      const orderId = route.split('/').pop();
+      const query = new URLSearchParams({ id: `eq.${orderId}`, select: 'id' });
+      try {
+        const response = await fetch(`${supabaseUrl}/rest/v1/orders?${query}`, {
+          method: 'PATCH',
+          headers: supabaseHeaders({ 'Content-Type': 'application/json', Prefer: 'return=representation' }),
+          body: JSON.stringify({ status: data.status })
+        });
+        const updated = await supabaseResponse(response);
+        if (!updated.length) return json(res, 404, { error: 'Order not found.' });
+        const order = (await fetchSupabaseOrders()).find(item => item.id === orderId);
+        return json(res, 200, { order });
+      } catch (error) {
+        return json(res, 502, { error: `Could not update the Supabase order: ${error.message}` });
+      }
+    }
     const order = orders.find(item => item.id === route.split('/').pop());
     if (!order) return json(res, 404, { error: 'Order not found.' });
     const data = await body(req); if (!['Order received', 'Processing', 'Out for delivery', 'Delivered', 'Cancelled'].includes(data.status)) return json(res, 400, { error: 'Unsupported order status.' });

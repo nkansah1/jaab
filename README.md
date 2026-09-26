@@ -42,7 +42,9 @@ Check the connection at http://localhost:3000/api/health/supabase. Sign-in crede
 
 The complete database schema is in [supabase/schema.sql](supabase/schema.sql). Open the Supabase Dashboard for the project in `SUPABASE_URL`, choose **SQL Editor**, paste that file, and run it once. It creates profiles, products, orders, order items, timestamps, the new-user profile trigger, and row-level security policies.
 
-Products use Supabase when `SUPABASE_SERVICE_ROLE_KEY` is configured; orders still use the in-memory store. To grant administrator access, set the user's `role` to `admin` in `public.profiles`, then sign out and back in. A Supabase publishable key is intentionally not allowed to perform protected server writes. Never put the service-role key in frontend code or commit a real key to `.env.example`.
+After updating this project, run the latest `supabase/schema.sql` in the Supabase SQL Editor again to install the transactional `create_order` function. Checkout uses that function to reserve current stock and save the order and its line items atomically. Customer order history, the admin order queue, and status changes then read/write the Supabase tables instead of process memory.
+
+Products and orders use Supabase when `SUPABASE_SERVICE_ROLE_KEY` is configured. To grant administrator access, set the user's `role` to `admin` in `public.profiles`, then sign out and back in. A Supabase publishable key is intentionally not allowed to perform protected server writes. Never put the service-role key in frontend code or commit a real key to `.env.example`.
 
 ## Included foundation
 

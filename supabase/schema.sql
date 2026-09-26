@@ -50,6 +50,103 @@ create table if not exists public.order_items (
   price integer not null check (price >= 0)
 );
 
+create or replace function public.create_order(
+  p_order_id text,
+  p_user_id uuid,
+  p_customer text,
+  p_phone text,
+  p_email text,
+  p_payment text,
+  p_address text,
+  p_delivery_address jsonb,
+  p_items jsonb
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_line jsonb;
+  v_product public.products%rowtype;
+  v_quantity integer;
+  v_total integer := 0;
+  v_order_items jsonb := '[]'::jsonb;
+  v_order public.orders%rowtype;
+  v_created_at timestamptz := now();
+begin
+  if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'The order must contain at least one item.' using errcode = '22023';
+  end if;
+  if p_payment not in ('Mobile Money', 'Pay on delivery') then
+    raise exception 'Unsupported payment method.' using errcode = '22023';
+  end if;
+
+  for v_line in select value from jsonb_array_elements(p_items)
+  loop
+    if coalesce(v_line->>'productId', '') = '' then
+      raise exception 'An order item is missing its product ID.' using errcode = '22023';
+    end if;
+    v_quantity := (v_line->>'quantity')::integer;
+    if v_quantity < 1 then
+      raise exception 'Order quantities must be positive integers.' using errcode = '22023';
+    end if;
+
+    select * into v_product
+    from public.products
+    where id = v_line->>'productId'
+    for update;
+    if not found then
+      raise exception 'Product % is no longer available.', v_line->>'productId' using errcode = 'P0002';
+    end if;
+    if v_product.stock < v_quantity then
+      raise exception 'Product % is no longer available in that quantity.', v_product.name using errcode = 'P0001';
+    end if;
+
+    update public.products set stock = stock - v_quantity where id = v_product.id;
+    v_total := v_total + v_product.price * v_quantity;
+    v_order_items := v_order_items || jsonb_build_array(jsonb_build_object(
+      'productId', v_product.id,
+      'name', v_product.name,
+      'quantity', v_quantity,
+      'price', v_product.price
+    ));
+  end loop;
+
+  insert into public.orders (
+    id, reference, user_id, customer, phone, email, total, status, payment,
+    address, delivery_address, created_at
+  ) values (
+    p_order_id, p_order_id, p_user_id, p_customer, p_phone, p_email, v_total,
+    'Order received', p_payment, p_address, p_delivery_address, v_created_at
+  ) returning * into v_order;
+
+  insert into public.order_items (order_id, product_id, name, quantity, price)
+    select p_order_id, item->>'productId', item->>'name',
+      (item->>'quantity')::integer, (item->>'price')::integer
+    from jsonb_array_elements(v_order_items) as order_item(item);
+
+  return jsonb_build_object(
+    'id', v_order.id,
+    'reference', v_order.reference,
+    'userId', v_order.user_id,
+    'customer', v_order.customer,
+    'phone', v_order.phone,
+    'email', v_order.email,
+    'items', v_order_items,
+    'total', v_order.total,
+    'status', v_order.status,
+    'payment', v_order.payment,
+    'address', v_order.address,
+    'deliveryAddress', v_order.delivery_address,
+    'createdAt', v_order.created_at
+  );
+end;
+$$;
+
+revoke all on function public.create_order(text, uuid, text, text, text, text, text, jsonb, jsonb) from public, anon, authenticated;
+grant execute on function public.create_order(text, uuid, text, text, text, text, text, jsonb, jsonb) to service_role;
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
