@@ -11,13 +11,52 @@ const state = {
 };
 const $ = (selector) => document.querySelector(selector);
 const money = (value) => `GH₵${new Intl.NumberFormat("en-GH").format(value)}`;
-const API_BASE = (
-  window.JAAB_API_BASE ||
-  localStorage.getItem("jaab-api-base") ||
-  ""
-).replace(/\/+$/, "");
+// A deployed build can point the storefront at an API running somewhere else. The
+// host sets window.JAAB_API_BASE (see index.html); jaab-api-base in localStorage
+// stays available as a manual override for local testing.
+function resolveApiBase() {
+  const candidates = [window.JAAB_API_BASE, localStorage.getItem("jaab-api-base")]
+    .map((value) => (value || "").trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+  for (const base of candidates) {
+    let url;
+    try {
+      url = new URL(base, window.location.href);
+    } catch {
+      console.warn(`Ignoring malformed API address "${base}".`);
+      continue;
+    }
+    // A browser blocks an http:// request made from an https:// page before it
+    // even leaves the tab, so an old localhost override would only ever surface
+    // as an unexplainable "Failed to fetch". Skip it and use the default.
+    if (url.protocol === "http:" && window.location.protocol === "https:") {
+      console.warn(`Ignoring insecure API address "${base}" on an HTTPS page.`);
+      continue;
+    }
+    return base;
+  }
+  return "";
+}
+const API_BASE = resolveApiBase();
+const request = async (path, options = {}) => {
+  const url = `${API_BASE}${path}`;
+  try {
+    return await fetch(url, options);
+  } catch (error) {
+    // The static shell and the Node API are deployed independently, and a
+    // serverless function can reject the first request while it cold-starts,
+    // so one retry absorbs those transient failures.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    try {
+      return await fetch(url, options);
+    } catch (retryError) {
+      console.error(`Request to ${url} failed:`, retryError);
+      throw retryError;
+    }
+  }
+};
 const api = async (path, options = {}) => {
-  const response = await fetch(`${API_BASE}${path}`, {
+  const response = await request(path, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -53,7 +92,7 @@ async function loadProducts() {
   } catch (error) {
     state.products = [];
     state.loadError = error.message;
-    toast(`Products could not load: ${error.message}`);
+    toast("Couldn't reach the catalogue. Check your connection.");
   }
   renderCategories();
   renderProducts();
@@ -85,13 +124,15 @@ function renderProducts() {
         )
         .join("")
     : state.loadError
-      ? `<p class="empty-state">The catalogue is unreachable (${state.loadError}). If this page is hosted apart from the Node server, set window.JAAB_API_BASE to your API origin.</p>`
+      ? `<p class="empty-state">The catalogue is temporarily unavailable. Check your connection and try again. <button class="text-link" id="retry-catalogue">Retry</button></p>`
       : '<p class="empty-state">Nothing matched that search. Try a different phrase.</p>';
   document
     .querySelectorAll("[data-add]")
     .forEach(
       (button) => (button.onclick = () => addToCart(button.dataset.add)),
     );
+  const retry = $("#retry-catalogue");
+  if (retry) retry.onclick = loadProducts;
   document.querySelectorAll("[data-zoom-product]").forEach((visual) => {
     const open = () => openZoom(visual.dataset.zoomProduct);
     visual.onclick = open;
