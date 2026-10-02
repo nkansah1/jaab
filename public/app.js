@@ -24,7 +24,9 @@ const explain = (error) => {
 };
 // A deployed build can point the storefront at an API running somewhere else. The
 // host sets window.JAAB_API_BASE (see index.html); jaab-api-base in localStorage
-// stays available as a manual override for local testing.
+// stays available as a manual override for local testing. The page-level value is
+// checked first on purpose, so a leftover entry in someone's browser can never
+// point a live shopper at a dead address.
 function resolveApiBase() {
   const candidates = [window.JAAB_API_BASE, localStorage.getItem("jaab-api-base")]
     .map((value) => (value || "").trim().replace(/\/+$/, ""))
@@ -578,8 +580,15 @@ $("#momo-payment-confirmed").addEventListener("change", (event) => {
   $("#confirm-order-button").disabled = !event.target.checked;
 });
 updatePaymentInstructions();
+// The observer below can fire twice within one mutation batch, and the section
+// only exists once the response lands, so a presence check alone lets two
+// requests through and appends the panel twice. This flag closes that window
+// without going sticky: a later render that rewrites #admin-content clears the
+// section and is still free to fetch it again.
+let adminUsersInFlight = false;
 function renderAdminUsers() {
-  if (state.user?.role !== "admin" || $("#admin-users")) return;
+  if (state.user?.role !== "admin" || adminUsersInFlight || $("#admin-users")) return;
+  adminUsersInFlight = true;
   api("/api/admin/users")
     .then((data) => {
       const section = document.createElement("section");
@@ -597,6 +606,9 @@ function renderAdminUsers() {
       section.className = "admin-users";
       section.innerHTML = `<h3 class="eyebrow">Registered customers</h3><p class="empty-state">${explain(error)}</p>`;
       $("#admin-content").appendChild(section);
+    })
+    .finally(() => {
+      adminUsersInFlight = false;
     });
 }
 function renderAdminCreateProduct() {
