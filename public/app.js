@@ -53,9 +53,14 @@ function resolveApiBase() {
 const API_BASE = resolveApiBase();
 const request = async (path, options = {}) => {
   const url = `${API_BASE}${path}`;
+  const method = (options.method || "GET").toUpperCase();
   try {
     return await fetch(url, options);
   } catch (error) {
+    // Only idempotent reads are retried. A POST can fail at the network layer
+    // after the server already wrote the order, and retrying it would create a
+    // duplicate purchase, so writes are surfaced on the first failure.
+    if (method !== "GET" && method !== "HEAD") throw error;
     // The static shell and the Node API are deployed independently, and a
     // serverless function can reject the first request while it cold-starts,
     // so one retry absorbs those transient failures.
@@ -93,6 +98,14 @@ const toast = (message) => {
   element.textContent = message;
   element.classList.add("show");
   setTimeout(() => element.classList.remove("show"), 2800);
+};
+// The address form is hidden while the MoMo panel is on screen, so a message
+// written only to #checkout-error cannot be seen there. Fill both slots and
+// repeat it as a toast, so a rejected order can never look like a dead button.
+const checkoutMessage = (message) => {
+  $("#checkout-error").textContent = message;
+  $("#payment-error").textContent = message;
+  if (message) toast(message);
 };
 async function loadProducts() {
   try {
@@ -404,6 +417,14 @@ $("#search-input").oninput = (event) => {
 };
 $("#close-auth").onclick = () => $("#auth-dialog").close();
 $("#close-checkout").onclick = () => $("#checkout-dialog").close();
+// A native dialog also closes on Escape and after a successful submit, so the
+// reset belongs on the close event rather than on one button. Without it the
+// next checkout reopens on the previous order's payment panel with an emptied
+// cart, and Confirm Order then appears to do nothing at all.
+$("#checkout-dialog").addEventListener("close", () => {
+  hideMomoStep();
+  $("#payment-error").textContent = "";
+});
 $("#switch-auth").onclick = () => {
   state.authMode = state.authMode === "login" ? "register" : "login";
   syncAuthForm();
@@ -448,6 +469,7 @@ $("#checkout-button").onclick = () => {
     return;
   }
   closeCart();
+  hideMomoStep();
   $("#checkout-dialog").showModal();
 };
 $("#header-orders-button").onclick = () => {
@@ -491,7 +513,7 @@ function showMomoStep() {
     )
     .join("");
   $("#momo-payment-confirmed").checked = false;
-  $("#confirm-order-button").disabled = true;
+  $("#payment-error").textContent = "";
   checkoutForm.hidden = true;
   paymentStep.classList.remove("payment-page");
   paymentStep.hidden = false;
@@ -512,20 +534,41 @@ document.addEventListener("click", async (event) => {
   const confirmButton = event.target.closest("#confirm-order-button");
   if (confirmButton) {
     if (!$("#momo-payment-confirmed").checked) {
-      $("#checkout-error").textContent =
-        "Please confirm that you have completed the MTN MOMO payment.";
+      // The button stays clickable on purpose: a disabled one swallows the click
+      // and leaves the shopper with no idea why nothing happens.
+      checkoutMessage(
+        "Please tick the box below once you have completed the MTN MoMo payment.",
+      );
+      $("#momo-payment-confirmed").focus();
       return;
     }
-    $("#checkout-error").textContent = "";
-    const checkoutData = {
-      items: state.cart,
-      address: $("#checkout-address").value.trim(),
-      city: $("#checkout-city").value.trim(),
-      state: $("#checkout-state").value.trim(),
-      zipCode: $("#checkout-zip").value.trim(),
-      phone: $("#checkout-phone").value.trim(),
-      payment: document.querySelector('input[name="payment"]:checked').value,
-    };
+    checkoutMessage("");
+    let checkoutData;
+    try {
+      const selectedPayment = document.querySelector(
+        'input[name="payment"]:checked',
+      );
+      checkoutData = {
+        items: state.cart,
+        address: $("#checkout-address").value.trim(),
+        city: $("#checkout-city").value.trim(),
+        state: $("#checkout-state").value.trim(),
+        zipCode: $("#checkout-zip").value.trim(),
+        phone: $("#checkout-phone").value.trim(),
+        payment: selectedPayment ? selectedPayment.value : "Mobile Money",
+      };
+    } catch (error) {
+      console.error("Checkout details could not be read:", error);
+      checkoutMessage(
+        "We could not read your delivery details. Go back and check the form, then try again.",
+      );
+      return;
+    }
+    // A cold serverless function can take a second or two to answer, and a
+    // button that looks stuck gets clicked twice, creating two orders.
+    const confirmLabel = confirmButton.innerHTML;
+    confirmButton.disabled = true;
+    confirmButton.textContent = "Confirming…";
     try {
       const data = await api("/api/orders", {
         method: "POST",
@@ -538,13 +581,16 @@ document.addEventListener("click", async (event) => {
       renderOrders();
       document.querySelector("#orders").scrollIntoView();
     } catch (error) {
-      $("#checkout-error").textContent = explain(error);
+      checkoutMessage(explain(error));
+    } finally {
+      confirmButton.disabled = false;
+      confirmButton.innerHTML = confirmLabel;
     }
   }
 });
 $("#checkout-form").onsubmit = async (event) => {
   event.preventDefault();
-  $("#checkout-error").textContent = "";
+  checkoutMessage("");
   const selectedPayment = document.querySelector(
     'input[name="payment"]:checked',
   ).value;
@@ -573,11 +619,15 @@ $("#checkout-form").onsubmit = async (event) => {
     renderOrders();
     document.querySelector("#orders").scrollIntoView();
   } catch (error) {
-    $("#checkout-error").textContent = explain(error);
+    checkoutMessage(explain(error));
   }
 };
 $("#momo-payment-confirmed").addEventListener("change", (event) => {
-  $("#confirm-order-button").disabled = !event.target.checked;
+  // Clearing the leftover warning here means ticking the box removes the message
+  // the shopper saw when they clicked Confirm too early.
+  if (event.target.checked && $("#payment-error").textContent.startsWith("Please tick")) {
+    checkoutMessage("");
+  }
 });
 updatePaymentInstructions();
 // The observer below can fire twice within one mutation batch, and the section
