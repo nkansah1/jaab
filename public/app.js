@@ -11,6 +11,17 @@ const state = {
 };
 const $ = (selector) => document.querySelector(selector);
 const money = (value) => `GH₵${new Intl.NumberFormat("en-GH").format(value)}`;
+// fetch() rejects with a TypeError for every network-level failure, and the only
+// detail it offers is "Failed to fetch". Keep that in the console and show the
+// shopper something they can act on. Server-side errors already carry a readable
+// message and are passed through untouched.
+const explain = (error) => {
+  if (error instanceof TypeError) {
+    console.error("Network request failed:", error);
+    return "We couldn't reach the Jaab server. Check your connection, then try again.";
+  }
+  return error.message;
+};
 // A deployed build can point the storefront at an API running somewhere else. The
 // host sets window.JAAB_API_BASE (see index.html); jaab-api-base in localStorage
 // stays available as a manual override for local testing.
@@ -91,7 +102,7 @@ async function loadProducts() {
     state.loadError = null;
   } catch (error) {
     state.products = [];
-    state.loadError = error.message;
+    state.loadError = explain(error);
     toast("Couldn't reach the catalogue. Check your connection.");
   }
   renderCategories();
@@ -322,7 +333,7 @@ function renderOrders() {
       $("#header-orders-count").textContent = String(orders.length);
     })
     .catch((error) => {
-      headerTarget.innerHTML = `<p class="empty-state">${error.message}</p>`;
+      headerTarget.innerHTML = `<p class="empty-state">${explain(error)}</p>`;
     });
 }
 function renderAdmin() {
@@ -363,14 +374,14 @@ function renderAdmin() {
               toast("Product updated");
               loadProducts();
             } catch (error) {
-              toast(error.message);
+              toast(explain(error));
             }
           }),
       );
     })
     .catch((error) => {
       $("#admin-content").innerHTML =
-        `<p class="empty-state">${error.message}</p>`;
+        `<p class="empty-state">${explain(error)}</p>`;
     });
 }
 $("#cart-button").onclick = openCart;
@@ -424,7 +435,7 @@ $("#auth-form").onsubmit = async (event) => {
   } catch (error) {
     if (state.authMode === "register")
       registrationCooldownUntil = Date.now() + 60000;
-    $("#auth-error").textContent = error.message;
+    $("#auth-error").textContent = explain(error);
   }
 };
 $("#checkout-button").onclick = () => {
@@ -525,7 +536,7 @@ document.addEventListener("click", async (event) => {
       renderOrders();
       document.querySelector("#orders").scrollIntoView();
     } catch (error) {
-      $("#checkout-error").textContent = error.message;
+      $("#checkout-error").textContent = explain(error);
     }
   }
 });
@@ -560,7 +571,7 @@ $("#checkout-form").onsubmit = async (event) => {
     renderOrders();
     document.querySelector("#orders").scrollIntoView();
   } catch (error) {
-    $("#checkout-error").textContent = error.message;
+    $("#checkout-error").textContent = explain(error);
   }
 };
 $("#momo-payment-confirmed").addEventListener("change", (event) => {
@@ -577,7 +588,16 @@ function renderAdminUsers() {
       section.innerHTML = `<h3 class="eyebrow">Registered customers</h3><div class="admin-users-list">${data.users.map((user) => `<div class="admin-user-row"><div><strong>${user.name}</strong><small>${user.email}</small></div><span class="admin-user-role">${user.role}</span><time>${new Date(user.createdAt).toLocaleDateString("en-GH", { day: "numeric", month: "short", year: "numeric" })}</time></div>`).join("")}</div>`;
       $("#admin-content").appendChild(section);
     })
-    .catch((error) => toast(error.message));
+    .catch((error) => {
+      // Render the section even when the request fails. The guard above keys off
+      // its presence, so leaving it out sends the MutationObserver into a
+      // refetch loop on every outage.
+      const section = document.createElement("section");
+      section.id = "admin-users";
+      section.className = "admin-users";
+      section.innerHTML = `<h3 class="eyebrow">Registered customers</h3><p class="empty-state">${explain(error)}</p>`;
+      $("#admin-content").appendChild(section);
+    });
 }
 function renderAdminCreateProduct() {
   if (state.user?.role !== "admin" || $("#admin-create-product")) return;
@@ -635,7 +655,7 @@ function renderAdminCreateProduct() {
       loadProducts();
       renderAdmin();
     } catch (error) {
-      errorElement.textContent = error.message;
+      errorElement.textContent = explain(error);
     } finally {
       submitButton.disabled = false;
       submitButton.textContent = "Add product +";
@@ -699,7 +719,7 @@ document.addEventListener(
       loadProducts();
       renderAdmin();
     } catch (error) {
-      toast(error.message);
+      toast(explain(error));
     }
   },
   true,
@@ -715,7 +735,7 @@ async function init() {
   } catch (error) {
     state.products = [];
     state.categories = ["All"];
-    state.loadError = error.message;
+    state.loadError = explain(error);
   }
   renderCategories();
   renderProducts();
