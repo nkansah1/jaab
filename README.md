@@ -21,7 +21,7 @@ The repository includes a Render Blueprint in `render.yaml`.
 5. In Render **Settings → Custom Domains**, add your domain. Follow the DNS records Render displays at your domain registrar, then wait for domain verification and TLS/HTTPS to become active.
 6. In Supabase **Authentication → URL Configuration**, set the production domain as the Site URL and add the production domain to the Redirect URLs list.
 
-The Blueprint uses Render's free web-service plan, which can spin down when idle and is intended for initial setup/testing. Upgrade the plan for production availability. Orders become durable after you run the latest `supabase/schema.sql`; until that migration is applied, checkout reports a setup error rather than storing orders in volatile memory. App login sessions are still in memory and customers may need to sign in again after a server restart or redeploy.
+The Blueprint uses Render's free web-service plan, which can spin down when idle and is intended for initial setup/testing. Upgrade the plan for production availability. Orders are durable as soon as the `orders` and `order_items` tables exist; if the `create_order` function from the latest `supabase/schema.sql` is not installed yet, checkout falls back to direct Supabase writes instead of failing. `/api/health/supabase` reports the active path in `ordersMode` (`rpc`, `rest`, or `unavailable`). App login sessions are still in memory and customers may need to sign in again after a server restart or redeploy.
 
 ## Supabase connection
 
@@ -42,9 +42,28 @@ Check the connection at http://localhost:3000/api/health/supabase. Sign-in crede
 
 The complete database schema is in [supabase/schema.sql](supabase/schema.sql). Open the Supabase Dashboard for the project in `SUPABASE_URL`, choose **SQL Editor**, paste that file, and run it once. It creates profiles, products, orders, order items, timestamps, the new-user profile trigger, and row-level security policies.
 
-After updating this project, run the latest `supabase/schema.sql` in the Supabase SQL Editor again to install the transactional `create_order` function. Checkout uses that function to reserve current stock and save the order and its line items atomically. Customer order history, the admin order queue, and status changes then read/write the Supabase tables instead of process memory.
+After updating this project, run the latest `supabase/schema.sql` in the Supabase SQL Editor again to install the transactional `create_order` function. Checkout prefers that function, which reserves current stock and saves the order and its line items in one atomic database transaction. Customer order history, the admin order queue, and status changes then read/write the Supabase tables instead of process memory.
+
+When `create_order` is not installed, checkout uses a fallback that writes the same tables with the service-role key: each product's stock is reserved with a compare-and-swap update (the write only lands if the stock value is unchanged since it was read, retrying up to five times), the order and its line items are inserted, and any stock already reserved is released again if a later step fails. Totals are always recalculated from Supabase product prices, never taken from the browser. The fallback blocks overselling, but because it is not a single database transaction, an interruption between the stock reservation and the order insert can leave stock reserved for an order that was never recorded; installing `create_order` removes that window and is the recommended production setup.
 
 Products and orders use Supabase when `SUPABASE_SERVICE_ROLE_KEY` is configured. To grant administrator access, set the user's `role` to `admin` in `public.profiles`, then sign out and back in. A Supabase publishable key is intentionally not allowed to perform protected server writes. Never put the service-role key in frontend code or commit a real key to `.env.example`.
+
+## GitHub Pages (static storefront shell)
+
+GitHub Pages serves files only, so it cannot run `server.js` or its `/api/*` routes. It can host the storefront shell from `public/` while the API runs on Render or another Node host.
+
+1. In the repository's **Settings → Pages → Build and deployment**, set **Source** to **GitHub Actions**. Leaving it on **Deploy from a branch** runs Jekyll over the repository root, which renders `README.md` as the site instead of the store.
+2. The `Deploy static content to Pages` workflow uploads only `public`. Never change that path to `.`: publishing the repository would expose `server.js` and `supabase/schema.sql` on the public site.
+3. Tell the shell where the API lives, before `app.js` loads:
+
+```html
+<script>window.JAAB_API_BASE = "https://your-service.onrender.com";</script>
+<script src="app.js"></script>
+```
+
+   `API_BASE` also accepts a `jaab-api-base` value from `localStorage`, which is handy for testing without a new commit. Without either setting, requests stay same-origin, which is correct when `server.js` serves the storefront.
+4. Allow that storefront origin on the API by listing it in `CORS_ALLOWED_ORIGINS` (comma-separated). The setting is off by default, so no cross-origin access exists until you configure it.
+5. For a custom domain, add it in **Settings → Pages**, place a `CNAME` file inside `public/` so it ships with the artifact, then create the DNS records GitHub displays at your registrar. Login, checkout and the admin dashboard still require the API host from step 3.
 
 ## Included foundation
 

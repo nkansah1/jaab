@@ -36,8 +36,10 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
-          path: '.'
+          # Only the static storefront. Never '.': publishing the repository would
+          # expose server.js and supabase/schema.sql on the public site, and the
+          # /api/* routes cannot run on Pages anyway (see window.JAAB_API_BASE).
+          path: 'public'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5

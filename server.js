@@ -7,8 +7,10 @@ const { URL } = require('node:url');
 const envPath = path.join(__dirname, '.env');
 if (fs.existsSync(envPath)) {
   fs.readFileSync(envPath, 'utf8').split(/\r?\n/).forEach(line => {
-    const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (match && !process.env[match[1]]) process.env[match[1]] = match[2].trim();
+    const match = line.match(/^\s*(?:export\s+)?([A-Za-z0-9_]+)\s*=\s*(.*)$/);
+    if (!match) return;
+    const value = match[2].replace(/^['"]|['"]$/g, '').trim();
+    if (value && !process.env[match[1]]) process.env[match[1]] = value;
   });
 }
 const PORT = process.env.PORT || 3000;
@@ -16,10 +18,28 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseStorageBucket = process.env.SUPABASE_STORAGE_BUCKET || 'product-images';
+const sessionSecret = process.env.SESSION_SECRET || '';
+const sessionTtlMs = 30 * 24 * 60 * 60 * 1000;
+const missingSupabaseVars = [['SUPABASE_URL', supabaseUrl], ['SUPABASE_ANON_KEY', supabaseAnonKey], ['SUPABASE_SERVICE_ROLE_KEY', supabaseServiceRoleKey]].filter(([, value]) => !value).map(([name]) => name);
+function supabaseSetupMessage(names) {
+  return `Supabase is not configured on this server: ${names.join(' and ')} ${names.length > 1 ? 'are' : 'is'} missing from the environment. Locally, add ${names.length > 1 ? 'them' : 'it'} to .env. On a deployed build, add ${names.length > 1 ? 'them' : 'it'} in the host's Environment settings, because .env is never committed. Then restart the server.`;
+}
 const publicDir = path.join(__dirname, 'public');
 const dataDir = path.join(__dirname, 'data');
 const productsFile = path.join(dataDir, 'products.json');
 const sessions = new Map();
+const allowedOrigins = (process.env.CORS_ALLOWED_ORIGINS || '').split(',').map(origin => origin.trim()).filter(Boolean);
+function corsHeaders(req) {
+  const origin = req.headers.origin;
+  if (!origin || !allowedOrigins.length || !(allowedOrigins.includes('*') || allowedOrigins.includes(origin))) return {};
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+    'Access-Control-Max-Age': '600',
+    'Vary': 'Origin'
+  };
+}
 
 const seedProducts = [
   { id: 'JC-001', name: 'Abeni Woven Tote', category: 'Bags', price: 18500, stock: 18, badge: 'Bestseller', tone: 'clay', description: 'Hand-finished raffia carryall with a structured silhouette.', emoji: '◒' },
@@ -48,13 +68,36 @@ function body(req) {
     req.on('end', () => { try { resolve(raw ? JSON.parse(raw) : {}); } catch { reject(new Error('Invalid JSON')); } });
   });
 }
+function signSessionPayload(payload) {
+  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto.createHmac('sha256', sessionSecret).update(encoded).digest('base64url');
+  return `${encoded}.${signature}`;
+}
+function readSessionToken(token) {
+  const [encoded, signature] = (token || '').split('.');
+  if (!encoded || !signature) return null;
+  const expected = crypto.createHmac('sha256', sessionSecret).update(encoded).digest('base64url');
+  const provided = Buffer.from(signature);
+  const valid = Buffer.from(expected);
+  if (provided.length !== valid.length || !crypto.timingSafeEqual(provided, valid)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8'));
+    if (!payload.user || !Number.isFinite(payload.exp) || payload.exp < Date.now()) return null;
+    return payload.user;
+  } catch { return null; }
+}
 function tokenFor(user) {
-  const token = crypto.randomBytes(24).toString('hex');
-  sessions.set(token, user);
-  return token;
+  if (!sessionSecret) {
+    const token = crypto.randomBytes(24).toString('hex');
+    sessions.set(token, user);
+    return token;
+  }
+  return signSessionPayload({ sub: user.id, exp: Date.now() + sessionTtlMs, user });
 }
 function currentUser(req) {
   const token = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!token) return null;
+  if (sessionSecret) return readSessionToken(token);
   return sessions.get(token);
 }
 function requireUser(req, res) {
@@ -161,6 +204,92 @@ async function supabaseOrdersFunctionReady() {
     return false;
   }
 }
+async function supabaseOrdersTablesReady() {
+  if (!supabaseWriteConfigured()) return false;
+  try {
+    const checks = await Promise.all([
+      fetch(`${supabaseUrl}/rest/v1/orders?select=id&limit=0`, { headers: supabaseHeaders() }),
+      fetch(`${supabaseUrl}/rest/v1/order_items?select=id&limit=0`, { headers: supabaseHeaders() })
+    ]);
+    return checks.every(response => response.ok);
+  } catch {
+    return false;
+  }
+}
+let ordersRpcChecked;
+async function ordersRpcAvailable() {
+  if (ordersRpcChecked === undefined) ordersRpcChecked = await supabaseOrdersFunctionReady();
+  return ordersRpcChecked;
+}
+async function supabaseOrderMode() {
+  if (await ordersRpcAvailable()) return 'rpc';
+  return (await supabaseOrdersTablesReady()) ? 'rest' : 'unavailable';
+}
+async function fetchSupabaseProduct(productId) {
+  const query = new URLSearchParams({ select: 'id,name,price,stock', id: `eq.${encodeURIComponent(productId)}` });
+  const response = await fetch(`${supabaseUrl}/rest/v1/products?${query}`, { headers: supabaseHeaders() });
+  const [product] = await supabaseResponse(response);
+  return product || null;
+}
+async function adjustSupabaseStock(productId, fromStock, toStock) {
+  const query = new URLSearchParams({ id: `eq.${encodeURIComponent(productId)}`, stock: `eq.${fromStock}`, select: 'id' });
+  const response = await fetch(`${supabaseUrl}/rest/v1/products?${query}`, {
+    method: 'PATCH',
+    headers: supabaseHeaders({ 'Content-Type': 'application/json', Prefer: 'return=representation' }),
+    body: JSON.stringify({ stock: toStock })
+  });
+  return (await supabaseResponse(response)).length > 0;
+}
+async function reserveSupabaseStock(productId, quantity) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const product = await fetchSupabaseProduct(productId);
+    if (!product) throw new Error(`Product ${productId} is no longer available.`);
+    if (product.stock < quantity) throw new Error(`${product.name} is no longer available in that quantity.`);
+    if (await adjustSupabaseStock(product.id, product.stock, product.stock - quantity)) return product;
+  }
+  throw new Error('Another order is updating this product. Please try again.');
+}
+async function releaseSupabaseStock(productId, quantity) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const product = await fetchSupabaseProduct(productId);
+    if (!product) return;
+    if (await adjustSupabaseStock(product.id, product.stock, product.stock + quantity)) return;
+  }
+}
+async function createSupabaseOrderDirectly(payload) {
+  const reserved = [];
+  try {
+    const lineItems = [];
+    for (const item of payload.items) {
+      const product = await reserveSupabaseStock(item.productId, item.quantity);
+      reserved.push({ productId: product.id, quantity: item.quantity });
+      lineItems.push({ productId: product.id, name: product.name, quantity: item.quantity, price: product.price });
+    }
+    const total = lineItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const orderRow = {
+      id: payload.orderId, reference: payload.orderId, user_id: payload.userId, customer: payload.customer,
+      phone: payload.phone, email: payload.email, total, status: 'Order received', payment: payload.payment,
+      address: payload.address, delivery_address: payload.deliveryAddress, created_at: new Date().toISOString()
+    };
+    const orderResponse = await fetch(`${supabaseUrl}/rest/v1/orders`, {
+      method: 'POST',
+      headers: supabaseHeaders({ 'Content-Type': 'application/json', Prefer: 'return=representation' }),
+      body: JSON.stringify(orderRow)
+    });
+    const [created] = await supabaseResponse(orderResponse);
+    if (!created) throw new Error('Supabase did not return the new order.');
+    const itemResponse = await fetch(`${supabaseUrl}/rest/v1/order_items`, {
+      method: 'POST',
+      headers: supabaseHeaders({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }),
+      body: JSON.stringify(lineItems.map(item => ({ order_id: payload.orderId, product_id: item.productId, name: item.name, quantity: item.quantity, price: item.price })))
+    });
+    await supabaseResponse(itemResponse);
+    return mapSupabaseOrder({ ...created, items: lineItems });
+  } catch (error) {
+    for (const entry of reserved) await releaseSupabaseStock(entry.productId, entry.quantity);
+    throw error;
+  }
+}
 async function fetchSupabaseProfile(userId) {
   if (!supabaseWriteConfigured()) throw new Error('Supabase profile access is not configured on the server.');
   const query = new URLSearchParams({ select: 'id,name,email,role,created_at', id: `eq.${userId}`, limit: '1' });
@@ -190,8 +319,8 @@ async function api(req, res, url) {
     if (!supabaseUrl || !supabaseAnonKey) return json(res, 503, { connected: false, error: 'Supabase environment variables are missing.' });
     try {
       const response = await fetch(`${supabaseUrl}/auth/v1/settings`, { headers: { apikey: supabaseAnonKey } });
-      const ordersPersistenceConfigured = await supabaseOrdersFunctionReady();
-      return json(res, response.ok ? 200 : 502, { connected: response.ok, productUploadsConfigured: supabaseWriteConfigured(), ordersPersistenceConfigured, storageBucket: supabaseStorageBucket, project: new URL(supabaseUrl).hostname, service: 'Supabase Auth, product catalog, and orders' });
+      const ordersMode = await supabaseOrderMode();
+      return json(res, response.ok ? 200 : 502, { connected: response.ok, productUploadsConfigured: supabaseWriteConfigured(), ordersPersistenceConfigured: ordersMode !== 'unavailable', ordersMode, storageBucket: supabaseStorageBucket, project: new URL(supabaseUrl).hostname, service: 'Supabase Auth, product catalog, and orders' });
     } catch (error) {
       return json(res, 502, { connected: false, error: error.message });
     }
@@ -205,7 +334,9 @@ async function api(req, res, url) {
   }
   if (req.method === 'POST' && route === '/api/auth/login') {
     const data = await body(req);
-    if (!supabaseUrl || !supabaseAnonKey || !data.email || !data.password) return json(res, 401, { error: 'Email or password is incorrect.' });
+    const authMissing = missingSupabaseVars.filter(name => name !== 'SUPABASE_SERVICE_ROLE_KEY');
+    if (authMissing.length) return json(res, 503, { error: supabaseSetupMessage(authMissing) });
+    if (!data.email || !data.password) return json(res, 400, { error: 'Email and password are required.' });
     if (!supabaseWriteConfigured()) return json(res, 503, { error: 'Supabase profile lookup is not configured on the server.' });
     try {
       const supabaseResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, { method: 'POST', headers: { apikey: supabaseAnonKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: data.email, password: data.password }) });
@@ -223,8 +354,9 @@ async function api(req, res, url) {
   if (req.method === 'POST' && route === '/api/auth/register') {
     const data = await body(req);
     if (!data.name || !data.email || !data.password || data.password.length < 8) return json(res, 400, { error: 'Name, email and an 8-character password are required.' });
-    if (!supabaseUrl || !supabaseAnonKey) return json(res, 503, { error: 'Supabase is not configured. Registration is temporarily unavailable.' });
-    if (!supabaseWriteConfigured()) return json(res, 503, { error: 'Supabase profile storage is not configured on the server.' });
+    const authMissing = missingSupabaseVars.filter(name => name !== 'SUPABASE_SERVICE_ROLE_KEY');
+    if (authMissing.length) return json(res, 503, { error: supabaseSetupMessage(authMissing) });
+    if (!supabaseWriteConfigured()) return json(res, 503, { error: supabaseSetupMessage(['SUPABASE_SERVICE_ROLE_KEY']) });
     let supabaseUser;
     try {
       const supabaseResponse = await fetch(`${supabaseUrl}/auth/v1/signup`, { method: 'POST', headers: { apikey: supabaseAnonKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ email: data.email, password: data.password, data: { name: data.name } }) });
@@ -273,29 +405,46 @@ async function api(req, res, url) {
     if (supabaseWriteConfigured() && user.supabaseUserId) {
       const orderReference = `JAAB-${Date.now().toString(36).slice(-6).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
       const address = [deliveryAddress.address, deliveryAddress.city, deliveryAddress.state, deliveryAddress.zipCode].join(', ');
+      const mode = await supabaseOrderMode();
+      if (mode === 'unavailable') return json(res, 503, { error: 'Supabase order storage is not installed yet. Run the latest supabase/schema.sql in your Supabase SQL Editor, then retry checkout.' });
       try {
-        const response = await fetch(`${supabaseUrl}/rest/v1/rpc/create_order`, {
-          method: 'POST',
-          headers: supabaseHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({
-            p_order_id: orderReference,
-            p_user_id: user.supabaseUserId,
-            p_customer: user.name,
-            p_phone: data.phone,
-            p_email: user.email,
-            p_payment: data.payment,
-            p_address: address,
-            p_delivery_address: deliveryAddress,
-            p_items: data.items.map(item => ({ productId: item.productId, quantity: item.quantity }))
-          })
+        if (mode === 'rpc') {
+          const response = await fetch(`${supabaseUrl}/rest/v1/rpc/create_order`, {
+            method: 'POST',
+            headers: supabaseHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({
+              p_order_id: orderReference,
+              p_user_id: user.supabaseUserId,
+              p_customer: user.name,
+              p_phone: data.phone,
+              p_email: user.email,
+              p_payment: data.payment,
+              p_address: address,
+              p_delivery_address: deliveryAddress,
+              p_items: data.items.map(item => ({ productId: item.productId, quantity: item.quantity }))
+            })
+          });
+          const order = await supabaseResponse(response);
+          return json(res, 201, { order: mapSupabaseOrder(order) });
+        }
+        const order = await createSupabaseOrderDirectly({
+          orderId: orderReference,
+          userId: user.supabaseUserId,
+          customer: user.name,
+          phone: data.phone,
+          email: user.email,
+          payment: data.payment,
+          address,
+          deliveryAddress,
+          items: data.items.map(item => ({ productId: item.productId, quantity: item.quantity }))
         });
-        const order = await supabaseResponse(response);
-        return json(res, 201, { order: mapSupabaseOrder(order) });
+        return json(res, 201, { order });
       } catch (error) {
         if (/Could not find the function public\.create_order|schema cache/i.test(error.message)) {
+          ordersRpcChecked = false;
           return json(res, 503, { error: 'Supabase order storage is not installed yet. Run the latest supabase/schema.sql in your Supabase SQL Editor, then retry checkout.' });
         }
-        const status = /no longer available|not available in that quantity/i.test(error.message) ? 409 : 502;
+        const status = /no longer available|not available in that quantity|Please try again/i.test(error.message) ? 409 : 502;
         return json(res, status, { error: `Supabase could not create the order: ${error.message}` });
       }
     }
@@ -416,6 +565,8 @@ async function api(req, res, url) {
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
+  Object.entries(corsHeaders(req)).forEach(([header, value]) => res.setHeader(header, value));
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   if (url.pathname.startsWith('/api/')) {
     try { await api(req, res, url); } catch (error) { json(res, 500, { error: error.message || 'Unexpected server error.' }); }
     return;
@@ -425,8 +576,18 @@ const server = http.createServer(async (req, res) => {
   if (!filePath.startsWith(publicDir)) return json(res, 403, { error: 'Forbidden.' });
   fs.readFile(filePath, (error, content) => {
     if (error) return json(res, 404, { error: 'Page not found.' });
-    const contentTypes = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript' };
-    res.writeHead(200, { 'Content-Type': contentTypes[path.extname(filePath)] || 'application/octet-stream' }); res.end(content);
+    const contentTypes = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+    res.writeHead(200, { 'Content-Type': contentTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream' }); res.end(content);
   });
 });
-server.listen(PORT, () => console.log(`Jaab Collection running at http://localhost:${PORT}`));
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') console.error(`Port ${PORT} is already in use. Close the other Jaab process (run: lsof -ti:${PORT} | xargs kill) or set PORT in .env to a free port.`);
+  else if (error.code === 'EACCES') console.error(`Port ${PORT} needs administrator rights. Use a port above 1024.`);
+  else console.error(`Server failed to start: ${error.message}`);
+  process.exit(1);
+});
+server.listen(PORT, () => {
+  console.log(`Jaab Collection running at http://localhost:${PORT}`);
+  if (missingSupabaseVars.length) console.warn(`WARNING: missing ${missingSupabaseVars.join(', ')}. Sign-in and sign-up stay disabled, and the catalog falls back to data/products.json until they are set.`);
+  if (!sessionSecret) console.warn('WARNING: SESSION_SECRET is not set, so sign-in tokens are kept in this process memory. They break on every restart and on serverless hosts (Vercel, Railway) where each request may land on a fresh instance. Set SESSION_SECRET in .env or your host environment to issue signed tokens that any instance can verify.');
+});

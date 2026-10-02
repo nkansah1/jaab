@@ -7,18 +7,28 @@ const state = {
   token: localStorage.getItem("jaab-token"),
   user: JSON.parse(localStorage.getItem("jaab-user") || "null"),
   authMode: "login",
+  loadError: null,
 };
 const $ = (selector) => document.querySelector(selector);
 const money = (value) => `GH₵${new Intl.NumberFormat("en-GH").format(value)}`;
+const API_BASE = (
+  window.JAAB_API_BASE ||
+  localStorage.getItem("jaab-api-base") ||
+  ""
+).replace(/\/+$/, "");
 const api = async (path, options = {}) => {
-  const response = await fetch(path, {
+  const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
       ...(state.token ? { Authorization: `Bearer ${state.token}` } : {}),
     },
   });
-  const data = await response.json();
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 401 && state.token) {
+    clearSession();
+    throw new Error("Your session expired. Please sign in again.");
+  }
   if (!response.ok) throw new Error(data.error || "Something went wrong.");
   return data;
 };
@@ -33,11 +43,18 @@ const toast = (message) => {
   setTimeout(() => element.classList.remove("show"), 2800);
 };
 async function loadProducts() {
-  const data = await api(
-    `/api/products?search=${encodeURIComponent(state.search)}&category=${encodeURIComponent(state.category)}`,
-  );
-  state.products = data.products;
-  state.categories = data.categories;
+  try {
+    const data = await api(
+      `/api/products?search=${encodeURIComponent(state.search)}&category=${encodeURIComponent(state.category)}`,
+    );
+    state.products = data.products;
+    state.categories = data.categories;
+    state.loadError = null;
+  } catch (error) {
+    state.products = [];
+    state.loadError = error.message;
+    toast(`Products could not load: ${error.message}`);
+  }
   renderCategories();
   renderProducts();
 }
@@ -67,7 +84,9 @@ function renderProducts() {
             `<article class="product-card"><div class="product-visual ${product.tone}" data-zoom-product="${product.id}" role="button" tabindex="0" aria-label="Zoom ${product.name}">${product.image ? `<img class="product-image" src="${product.image}" alt="${product.name}">` : `<div class="product-shape">${product.emoji}</div>`}<span class="product-badge">${product.badge}</span></div><div class="product-meta"><div><p class="product-name">${product.name}</p><span class="product-category">${product.category} · ${product.stock} available</span></div><span class="product-price">${money(product.price)}</span></div><p class="product-description">${product.description}</p>${product.stock ? `<div class="product-actions"><button class="add-button" data-add="${product.id}">Add to cart +</button><a class="whatsapp-button" href="${whatsappLink(product)}" target="_blank" rel="noreferrer">Buy via WhatsApp</a></div>` : '<button class="add-button" disabled>Sold out</button>'}</article>`,
         )
         .join("")
-    : '<p class="empty-state">Nothing matched that search. Try a different phrase.</p>';
+    : state.loadError
+      ? `<p class="empty-state">The catalogue is unreachable (${state.loadError}). If this page is hosted apart from the Node server, set window.JAAB_API_BASE to your API origin.</p>`
+      : '<p class="empty-state">Nothing matched that search. Try a different phrase.</p>';
   document
     .querySelectorAll("[data-add]")
     .forEach(
@@ -192,6 +211,14 @@ function setAuth(user, token) {
   renderOrders();
   if (user.role === "admin") renderAdmin();
 }
+function clearSession() {
+  state.user = null;
+  state.token = null;
+  localStorage.removeItem("jaab-user");
+  localStorage.removeItem("jaab-token");
+  updateAccount();
+  renderOrders();
+}
 function updateAccount() {
   $("#account-button").textContent = state.user
     ? state.user.name.split(" ")[0]
@@ -295,12 +322,7 @@ $("#register-button").onclick = () => {
   openAuth();
 };
 $("#logout-button").onclick = () => {
-  state.user = null;
-  state.token = null;
-  localStorage.removeItem("jaab-user");
-  localStorage.removeItem("jaab-token");
-  updateAccount();
-  renderOrders();
+  clearSession();
   toast("You have been signed out");
   document.querySelector("#orders").scrollIntoView();
 };
@@ -634,14 +656,20 @@ document.addEventListener(
   true,
 );
 async function init() {
-  const data = await api("/api/products");
-  allProducts = data.products;
-  state.products = data.products;
-  state.categories = data.categories;
-  renderCategories();
-  renderProducts();
   renderCart();
   updateAccount();
+  try {
+    const data = await api("/api/products");
+    allProducts = data.products;
+    state.products = data.products;
+    state.categories = data.categories;
+  } catch (error) {
+    state.products = [];
+    state.categories = ["All"];
+    state.loadError = error.message;
+  }
+  renderCategories();
+  renderProducts();
   renderOrders();
   if (state.user?.role === "admin") renderAdmin();
 }
