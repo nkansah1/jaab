@@ -214,6 +214,33 @@ function addToCart(id) {
   toast(`${product.name} added to your bag`);
 }
 let allProducts = [];
+function reconcileCart() {
+  if (!allProducts.length) return false;
+  const byId = new Map(allProducts.map((product) => [product.id, product]));
+  const kept = [];
+  let removed = 0;
+  let reduced = 0;
+  for (const line of state.cart) {
+    const product = byId.get(line.productId);
+    if (!product || product.stock < 1) {
+      removed++;
+      continue;
+    }
+    if (line.quantity > product.stock) {
+      kept.push({ ...line, quantity: product.stock });
+      reduced++;
+    } else kept.push(line);
+  }
+  if (!removed && !reduced) return false;
+  state.cart = kept;
+  persistCart();
+  toast(
+    removed
+      ? "An item in your bag is no longer available and has been removed."
+      : "A quantity in your bag was reduced to match what is left in stock.",
+  );
+  return true;
+}
 function renderCart() {
   const lines = state.cart
     .map((item) => {
@@ -462,6 +489,7 @@ $("#auth-form").onsubmit = async (event) => {
   }
 };
 $("#checkout-button").onclick = () => {
+  reconcileCart();
   if (!state.cart.length) return toast("Add something to your bag first");
   if (!state.user) {
     closeCart();
@@ -801,6 +829,13 @@ async function init() {
   }
   renderCategories();
   renderProducts();
+  // A saved bag can still hold a product that has since been deleted or sold
+  // out. renderCart hides those lines while the badge keeps counting them, so
+  // the shopper cannot remove what they cannot see, and the raw cart then
+  // reaches the server, which rejects the whole order for a line nobody was
+  // shown. Reconcile against the live catalogue, but only now that it has
+  // actually loaded, so a temporary outage cannot empty anyone's bag.
+  reconcileCart();
   // renderCart ran above before allProducts existed, which silently dropped
   // every saved line, so a returning shopper saw an empty bag with a count of
   // one on the badge. Draw it again now that prices and names are available.
