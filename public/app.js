@@ -801,6 +801,10 @@ async function init() {
   }
   renderCategories();
   renderProducts();
+  // renderCart ran above before allProducts existed, which silently dropped
+  // every saved line, so a returning shopper saw an empty bag with a count of
+  // one on the badge. Draw it again now that prices and names are available.
+  renderCart();
   renderOrders();
   if (state.user?.role === "admin") renderAdmin();
 }
