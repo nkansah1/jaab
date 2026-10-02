@@ -50,19 +50,23 @@ Products and orders use Supabase when `SUPABASE_SERVICE_ROLE_KEY` is configured.
 
 ## GitHub Pages (static storefront shell)
 
-GitHub Pages serves files only, so it cannot run `server.js` or its `/api/*` routes. It can host the storefront shell from `public/` while the API runs on Render or another Node host.
+GitHub Pages serves files only, so it cannot run `server.js` or its `/api/*` routes. It can host the storefront shell from `public/` while the API runs on Render or another Node host. `GET /api/health/supabase` reports `catalogSource`, so you can tell whether a deployment is reading the real Supabase catalog or the `data/products.json` seed file it falls back to when the variables are absent.
 
 1. In the repository's **Settings → Pages → Build and deployment**, set **Source** to **GitHub Actions**. Leaving it on **Deploy from a branch** runs Jekyll over the repository root, which renders `README.md` as the site instead of the store.
 2. The `Deploy static content to Pages` workflow uploads only `public`. Never change that path to `.`: publishing the repository would expose `server.js` and `supabase/schema.sql` on the public site.
-3. Tell the shell where the API lives, before `app.js` loads:
+3. Tell the shell where the API lives. `public/index.html` already sets it for you:
 
 ```html
-<script>window.JAAB_API_BASE = "https://your-service.onrender.com";</script>
+<script>
+  window.JAAB_API_BASE = location.hostname.endsWith("github.io")
+    ? "https://jaab-jet.vercel.app"
+    : "";
+</script>
 <script src="app.js"></script>
 ```
 
-   `API_BASE` also accepts a `jaab-api-base` value from `localStorage`, which is handy for testing without a new commit. Without either setting, requests stay same-origin, which is correct when `server.js` serves the storefront.
-4. Allow that storefront origin on the API by listing it in `CORS_ALLOWED_ORIGINS` (comma-separated). The setting is off by default, so no cross-origin access exists until you configure it.
+   Point it at whichever Node host runs your API, and change it if you move hosts. On `localhost` and on any origin that does not end in `github.io` the value stays empty, so requests remain same-origin — which is correct when `server.js` serves the storefront itself. `API_BASE` in `app.js` also accepts a `jaab-api-base` value from `localStorage`, which is handy for testing without a new commit.
+4. Allow that storefront origin on the API by listing it in `CORS_ALLOWED_ORIGINS` (comma-separated), for example `https://nkansah1.github.io`. The setting is off by default, so no cross-origin access exists until you configure it — without it the browser blocks the storefront's calls and the grid reports that the catalogue is unreachable.
 5. For a custom domain, add it in **Settings → Pages**, place a `CNAME` file inside `public/` so it ships with the artifact, then create the DNS records GitHub displays at your registrar. Login, checkout and the admin dashboard still require the API host from step 3.
 
 ## Included foundation

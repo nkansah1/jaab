@@ -159,7 +159,7 @@
       </p>
       <p class="footer-meta">© 2026 Jaab Collection</p>
     </footer>
-    <aside class="cart-drawer" id="cart-drawer" aria-hidden="true">
+    <aside class="cart-drawer" id="cart-drawer" aria-hidden="true" inert>
       <div class="drawer-header">
         <div>
           <p class="eyebrow">Your cart</p>
@@ -194,7 +194,7 @@
       <button class="close-button" id="close-auth" aria-label="Close sign in">
         ×
       </button>
-      <p class="eyebrow">Welcome back</p>
+      <p class="eyebrow" id="auth-eyebrow">Welcome back</p>
       <h2 id="auth-title">Sign in to Jaab.</h2>
       <p class="dialog-intro">
         Save your details and keep track of every delivery.
@@ -368,6 +368,16 @@
       <p class="zoom-title" id="zoom-title"></p>
     </dialog>
     <div class="toast" id="toast" role="status"></div>
+    <script>
+      // GitHub Pages can only host this static shell; the API needs the Node
+      // server. When served from a Pages origin, point requests at the deployed
+      // API instead of the same-origin /api paths that Pages cannot answer.
+      // Any other host (localhost, the Node server, a custom domain) stays
+      // same-origin. Override per-browser with localStorage "jaab-api-base".
+      window.JAAB_API_BASE = location.hostname.endsWith("github.io")
+        ? "https://jaab-jet.vercel.app"
+        : "";
+    </script>
     <script src="app.js"></script>
   </body>
 </html>

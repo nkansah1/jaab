@@ -193,13 +193,21 @@ function changeQuantity(id, delta) {
   persistCart();
 }
 function openCart() {
-  $("#cart-drawer").classList.add("open");
-  $("#cart-drawer").setAttribute("aria-hidden", "false");
+  const drawer = $("#cart-drawer");
+  drawer.inert = false;
+  drawer.classList.add("open");
+  drawer.setAttribute("aria-hidden", "false");
   $("#scrim").classList.add("show");
 }
 function closeCart() {
-  $("#cart-drawer").classList.remove("open");
-  $("#cart-drawer").setAttribute("aria-hidden", "true");
+  const drawer = $("#cart-drawer");
+  // Returning focus to the trigger keeps the close button from being hidden
+  // while it still holds focus, which browsers warn about and screen readers
+  // cannot follow.
+  if (drawer.contains(document.activeElement)) $("#cart-button").focus();
+  drawer.classList.remove("open");
+  drawer.setAttribute("aria-hidden", "true");
+  drawer.inert = true;
   $("#scrim").classList.remove("show");
 }
 function setAuth(user, token) {
@@ -227,7 +235,23 @@ function updateAccount() {
   $("#logout-button").hidden = !state.user;
   $("#admin").style.display = state.user?.role === "admin" ? "block" : "none";
 }
+function syncAuthForm() {
+  const login = state.authMode === "login";
+  $("#auth-eyebrow").textContent = login ? "Welcome back" : "New to Jaab";
+  $("#auth-title").textContent = login
+    ? "Sign in to Jaab."
+    : "Create your Jaab account.";
+  $("#auth-submit").innerHTML =
+    `${login ? "Sign in" : "Create account"} <span>→</span>`;
+  $("#auth-name").style.display = login ? "none" : "block";
+  $("#auth-name").required = !login;
+  $("#auth-password").autocomplete = login ? "current-password" : "new-password";
+  $("#switch-auth").textContent = login
+    ? "New here? Create an account"
+    : "Already have an account? Sign in";
+}
 function openAuth() {
+  syncAuthForm();
   $("#auth-dialog").showModal();
 }
 function renderOrders() {
@@ -311,14 +335,8 @@ function renderAdmin() {
 $("#cart-button").onclick = openCart;
 $("#close-cart").onclick = closeCart;
 $("#scrim").onclick = closeCart;
-$("#account-button").onclick = () =>
-  state.user ? document.querySelector("#orders").scrollIntoView() : openAuth();
 $("#register-button").onclick = () => {
   state.authMode = "register";
-  $("#auth-title").textContent = "Create your Jaab account.";
-  $("#auth-submit").innerHTML = "Create account <span>→</span>";
-  $("#auth-name").style.display = "block";
-  $("#switch-auth").textContent = "Already have an account? Sign in";
   openAuth();
 };
 $("#logout-button").onclick = () => {
@@ -334,17 +352,7 @@ $("#close-auth").onclick = () => $("#auth-dialog").close();
 $("#close-checkout").onclick = () => $("#checkout-dialog").close();
 $("#switch-auth").onclick = () => {
   state.authMode = state.authMode === "login" ? "register" : "login";
-  $("#auth-title").textContent =
-    state.authMode === "login"
-      ? "Sign in to Jaab."
-      : "Create your Jaab account.";
-  $("#auth-submit").innerHTML =
-    `${state.authMode === "login" ? "Sign in" : "Create account"} <span>→</span>`;
-  $("#auth-name").style.display = state.authMode === "login" ? "none" : "block";
-  $("#switch-auth").textContent =
-    state.authMode === "login"
-      ? "New here? Create an account"
-      : "Already have an account? Sign in";
+  syncAuthForm();
 };
 let registrationCooldownUntil = 0;
 $("#account-button").onclick = () =>

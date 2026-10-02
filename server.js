@@ -21,8 +21,13 @@ const supabaseStorageBucket = process.env.SUPABASE_STORAGE_BUCKET || 'product-im
 const sessionSecret = process.env.SESSION_SECRET || '';
 const sessionTtlMs = 30 * 24 * 60 * 60 * 1000;
 const missingSupabaseVars = [['SUPABASE_URL', supabaseUrl], ['SUPABASE_ANON_KEY', supabaseAnonKey], ['SUPABASE_SERVICE_ROLE_KEY', supabaseServiceRoleKey]].filter(([, value]) => !value).map(([name]) => name);
+function listVarNames(names) {
+  if (names.length > 2) return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+  return names.join(' and ');
+}
 function supabaseSetupMessage(names) {
-  return `Supabase is not configured on this server: ${names.join(' and ')} ${names.length > 1 ? 'are' : 'is'} missing from the environment. Locally, add ${names.length > 1 ? 'them' : 'it'} to .env. On a deployed build, add ${names.length > 1 ? 'them' : 'it'} in the host's Environment settings, because .env is never committed. Then restart the server.`;
+  console.error(`Supabase configuration missing: ${names.join(', ')}. Locally add ${names.length > 1 ? 'them' : 'it'} to .env; on a deployed build add ${names.length > 1 ? 'them' : 'it'} in the host's Environment settings, because .env is never committed, then restart.`);
+  return `Sign-in is temporarily unavailable because this server is missing ${listVarNames(names)}. Site owner: add ${names.length > 1 ? 'them' : 'it'} in your host's Environment settings, then redeploy.`;
 }
 const publicDir = path.join(__dirname, 'public');
 const dataDir = path.join(__dirname, 'data');
@@ -316,11 +321,12 @@ function sessionUserFromProfile(profile) {
 async function api(req, res, url) {
   const route = url.pathname;
   if (req.method === 'GET' && route === '/api/health/supabase') {
-    if (!supabaseUrl || !supabaseAnonKey) return json(res, 503, { connected: false, error: 'Supabase environment variables are missing.' });
+    const catalogSource = supabaseWriteConfigured() ? 'supabase' : 'data/products.json (seed file, not the live catalog)';
+    if (!supabaseUrl || !supabaseAnonKey) return json(res, 503, { connected: false, catalogSource, missingVariables: missingSupabaseVars, error: 'Supabase environment variables are missing.' });
     try {
       const response = await fetch(`${supabaseUrl}/auth/v1/settings`, { headers: { apikey: supabaseAnonKey } });
       const ordersMode = await supabaseOrderMode();
-      return json(res, response.ok ? 200 : 502, { connected: response.ok, productUploadsConfigured: supabaseWriteConfigured(), ordersPersistenceConfigured: ordersMode !== 'unavailable', ordersMode, storageBucket: supabaseStorageBucket, project: new URL(supabaseUrl).hostname, service: 'Supabase Auth, product catalog, and orders' });
+      return json(res, response.ok ? 200 : 502, { connected: response.ok, catalogSource, productUploadsConfigured: supabaseWriteConfigured(), ordersPersistenceConfigured: ordersMode !== 'unavailable', ordersMode, storageBucket: supabaseStorageBucket, project: new URL(supabaseUrl).hostname, service: 'Supabase Auth, product catalog, and orders' });
     } catch (error) {
       return json(res, 502, { connected: false, error: error.message });
     }
