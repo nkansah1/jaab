@@ -8,3 +8,4 @@ npm-debug.log*
 # Vercel CLI linkage and temporary auth files
 .vercel
 .vercel-tmp/
+.env*
